@@ -2,6 +2,7 @@ package com.quesssystems.rpaconsultaprodutos.service;
 
 import automacao.AutomacaoApi;
 import automacao.Planilha;
+import automacao.Requisicao;
 import com.quesssystems.rpaconsultaprodutos.automacao.PendenciaConsultaProdutos;
 import com.quesssystems.rpaconsultaprodutos.automacao.PendenciaUtil;
 import com.quesssystems.rpaconsultaprodutos.exceptions.ProdutoNaoEncontradoException;
@@ -28,11 +29,8 @@ public class RpaService {
     @Value("${api.recuperar-dados.link}")
     private String linkRecuperarDados;
 
-    @Value("${api.registrar-falha.link}")
-    private String linkRegistrarFalha;
-
-    @Value("${api.registrar-execucao.link}")
-    private String linkRegistrarExecucao;
+    @Value("${api.registrar-log.link}")
+    private String linkRegistrarLog;
 
     @Value("${api.id-automacao}")
     private Integer idAutomacao;
@@ -45,6 +43,9 @@ public class RpaService {
 
     @Value("${google-drive.path.resultados}")
     private String googleDrivePathResultados;
+
+    @Value("${rpa.token}")
+    private String token;
 
     @Value("${rpa.intervalo-minutos}")
     private Integer intervaloMinutos;
@@ -74,13 +75,11 @@ public class RpaService {
 
         try {
             while (true) {
-                AutomacaoApiUtil.executarRequisicao(String.format(linkRegistrarFalha, idAutomacao, AutomacaoApiUtil.converterMensagemParaRequisicao(" ")), idAutomacao);
-
                 logger.info("Recuperando dados da automação...");
-                AutomacaoApi automacaoApi = AutomacaoApiUtil.executarRequisicao(String.format(linkRecuperarDados, idAutomacao), idAutomacao);
+                AutomacaoApi automacaoApi = AutomacaoApiUtil.executarRequisicao(new Requisicao(linkRecuperarDados, token, idAutomacao, null));
                 if (automacaoApi.isExecutar(Calendar.getInstance())) {
                     logger.info("Recuperando pendências...");
-                    List<Planilha> planilhas = GoogleDriveUtil.recuperarPendencias(googleDrivePathPendentes);
+                    List<Planilha> planilhas = GoogleDriveUtil.recuperarPendencias(googleDrivePathPendentes, false);
                     List<PendenciaConsultaProdutos> pendenciasConsultaProdutos = new ArrayList<>();
 
                     if (planilhas.isEmpty()) {
@@ -112,19 +111,20 @@ public class RpaService {
                 }
 
                 logger.info("Registrando execução...");
-                AutomacaoApiUtil.executarRequisicao(String.format(linkRegistrarExecucao, idAutomacao), idAutomacao);
+                AutomacaoApiUtil.executarRequisicao(new Requisicao(linkRegistrarLog, token, idAutomacao, "Automação finalizada"));
                 logger.info(String.format("Aguardando intervalo de %d minutos", intervaloMinutos));
                 TimerUtil.aguardar(UnidadesMedidaTempoEnum.MINUTOS, intervaloMinutos);
             }
         }
         catch (RecuperarDadosException | AutomacaoNaoIdentificadaException | TimerUtilException | ArquivoException |
                MoverPendenciaException | NavegadorNaoIdentificadoException | DriverException | FecharNavegadorException |
-               UrlInvalidaException | ElementoNaoEncontradoException | ProdutoNaoEncontradoException | GerarPlanilhaException e) {
-            if (!e.getClass().equals(AutomacaoNaoIdentificadaException.class)) {
+               UrlInvalidaException | ElementoNaoEncontradoException | ProdutoNaoEncontradoException | GerarPlanilhaException |
+               TokenInvalidoException | MensagemInvalidaException | RequisicaoException e) {
+            if (!e.getClass().equals(AutomacaoNaoIdentificadaException.class) && !e.getClass().equals(TokenInvalidoException.class)) {
                 try {
-                    AutomacaoApiUtil.executarRequisicao(String.format(linkRegistrarFalha, idAutomacao, AutomacaoApiUtil.converterMensagemParaRequisicao(e.getMessage())), idAutomacao);
+                    AutomacaoApiUtil.executarRequisicao(new Requisicao(linkRegistrarLog, token, idAutomacao, e.getMessage()));
                 }
-                catch (RecuperarDadosException | AutomacaoNaoIdentificadaException e1) {
+                catch (RecuperarDadosException | AutomacaoNaoIdentificadaException | RequisicaoException | TokenInvalidoException | MensagemInvalidaException e1) {
                     JOptionPane.showMessageDialog(null, e1.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
                 }
             }
